@@ -1,66 +1,55 @@
-// (Full example with detailed comments in examples/01d_quick_example.rs)
-//
-// This example demonstrates clap's full 'custom derive' style of creating arguments which is the
-// simplest method of use, but sacrifices some flexibility.
+#[macro_use]
+extern crate clap;
 use clap::{AppSettings, Clap};
+use kvs::KvStore;
 
-/// This doc string acts as a help message when the user runs '--help'
-/// as do all doc strings on fields
 #[derive(Clap)]
-#[clap(setting = AppSettings::ColoredHelp)]
+#[clap(version = crate_version!(), setting = AppSettings::ColoredHelp)]
 struct Opts {
-    /// Sets a custom config file. Could have been an Option<T> with no default too
-    #[clap(short, long, default_value = "default.conf")]
-    config: String,
-    /// Some input. Because this isn't an Option<T> it's required to be used
-    input: String,
-    /// A level of verbosity, and can be used multiple times
-    #[clap(short, long, parse(from_occurrences))]
-    verbose: i32,
+    // /// A level of verbosity, and can be used multiple times
+    // #[clap(short, long, parse(from_occurrences))]
+    // verbose: i32,
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
 
 #[derive(Clap)]
 enum SubCommand {
-    #[clap(version = "1.3", author = "Someone E. <someone_else@other.com>")]
-    Test(Test),
+    Set(Set),
+    Get(Get),
+    Rm(Rm),
 }
 
-/// A subcommand for controlling testing
+/// Set the value of a string key to a string
 #[derive(Clap)]
-struct Test {
-    /// Print debug info
-    #[clap(short)]
-    debug: bool,
+struct Set {
+    key: String,
+    value: String,
+}
+
+/// Get the string value of a given string key
+#[derive(Clap)]
+struct Get {
+    key: String,
+}
+
+/// Remove a given key
+#[derive(Clap)]
+struct Rm {
+    key: String,
 }
 
 fn main() {
     let opts: Opts = Opts::parse();
 
-    // Gets a value for config if supplied by user, or defaults to "default.conf"
-    println!("Value for config: {}", opts.config);
-    println!("Using input file: {}", opts.input);
-
-    // Vary the output based on how many times the user used the "verbose" flag
-    // (i.e. 'myprog -v -v -v' or 'myprog -vvv' vs 'myprog -v'
-    match opts.verbose {
-        0 => println!("No verbose info"),
-        1 => println!("Some verbose info"),
-        2 => println!("Tons of verbose info"),
-        3 | _ => println!("Don't be crazy"),
-    }
+    let mut kvs = KvStore::new();
 
     // You can handle information about subcommands by requesting their matches by name
     // (as below), requesting just the name used, or both at the same time
     match opts.subcmd {
-        SubCommand::Test(t) => {
-            if t.debug {
-                println!("Printing debug info...");
-            } else {
-                println!("Printing normally...");
-            }
-        }
+        SubCommand::Set(set) => kvs.set(set.key, set.value),
+        SubCommand::Get(get) => println!("{:?}", kvs.get(get.key)),
+        SubCommand::Rm(rm) => kvs.remove(rm.key),
     }
 
     // more program logic goes here...
