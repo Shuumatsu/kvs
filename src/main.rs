@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate clap;
 use clap::{AppSettings, Clap};
-use kvs::KvStore;
+use kvs::{KvStore, KvsError, Result};
 
 #[derive(Clap)]
 #[clap(version = crate_version!(), setting = AppSettings::ColoredHelp)]
@@ -39,17 +39,18 @@ struct Rm {
     key: String,
 }
 
-fn main() {
+fn main() -> Result<()> {
     let opts: Opts = Opts::parse();
 
-    let mut kvs = KvStore::new();
+    let mut kvs = KvStore::new()?;
 
     // You can handle information about subcommands by requesting their matches by name
     // (as below), requesting just the name used, or both at the same time
     match opts.subcmd {
         SubCommand::Set(set) => kvs.set(set.key, set.value),
-        SubCommand::Get(get) => println!("{:?}", kvs.get(get.key)),
-        SubCommand::Rm(rm) => kvs.remove(rm.key),
+        // SubCommand::Get(get) => println!("{:?}", kvs.get(get.key)),
+        // SubCommand::Rm(rm) => kvs.remove(rm.key),
+        _ => unimplemented!(),
     }
 
     // more program logic goes here...
