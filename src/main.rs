@@ -47,11 +47,24 @@ fn main() -> Result<()> {
     // You can handle information about subcommands by requesting their matches by name
     // (as below), requesting just the name used, or both at the same time
     match opts.subcmd {
-        SubCommand::Set(set) => kvs.set(set.key, set.value),
-        // SubCommand::Get(get) => println!("{:?}", kvs.get(get.key)),
-        // SubCommand::Rm(rm) => kvs.remove(rm.key),
-        _ => unimplemented!(),
-    }
+        SubCommand::Set(set) => kvs.set(set.key, set.value)?,
+        SubCommand::Get(get) => {
+            let value = kvs.get(get.key)?;
+            if let Some(value) = value {
+                println!("{}", value);
+            } else {
+                println!("Key not found");
+            }
+        }
+        SubCommand::Rm(rm) => {
+            if let Err(err) = kvs.remove(rm.key) {
+                if let KvsError::KeyNotExist(_) = err {
+                    println!("Key not found");
+                }
+                return Err(err);
+            }
+        }
+    };
 
-    // more program logic goes here...
+    Ok(())
 }
