@@ -9,6 +9,7 @@ use std::io;
 use std::io::prelude::*;
 use std::path::PathBuf;
 
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -181,6 +182,7 @@ impl KvStore {
             (file_path, file)
         };
 
+        // maybe iter from smaller offset to greater offset is better?
         for (_, Record { offset, size }) in self.index.iter() {
             self.file.seek(io::SeekFrom::Start(*offset))?;
             let mut buf = vec![0; *size as usize];
