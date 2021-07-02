@@ -1,19 +1,34 @@
 #[macro_use]
 extern crate clap;
-use clap::{AppSettings, Clap};
-use kvs::{KvStore, KvsError, Result};
+#[macro_use]
+extern crate anyhow;
 
-#[derive(Clap)]
-#[clap(version = crate_version!(), setting = AppSettings::ColoredHelp)]
+mod protocol;
+
+use protocol::{Request, Response};
+
+use std::io::Read;
+use std::net::{SocketAddr, TcpStream};
+use std::str::FromStr;
+
+use anyhow::{Context, Result};
+use clap::{AppSettings, Clap};
+use kvs::{KvStore, KvsEngine, SledStore};
+use tracing::{event, instrument, Level};
+
+#[derive(Clap, Debug)]
+#[clap(name = "kvs-server", version = crate_version!(), setting = AppSettings::ColoredHelp)]
 struct Opts {
     // /// A level of verbosity, and can be used multiple times
     // #[clap(short, long, parse(from_occurrences))]
     // verbose: i32,
     #[clap(subcommand)]
     subcmd: SubCommand,
+    #[clap(long, default_value = "127.0.0.1:4000")]
+    addr: String,
 }
 
-#[derive(Clap)]
+#[derive(Clap, Debug)]
 enum SubCommand {
     Set(Set),
     Get(Get),
@@ -21,20 +36,20 @@ enum SubCommand {
 }
 
 /// Set the value of a string key to a string
-#[derive(Clap)]
+#[derive(Clap, Debug)]
 struct Set {
     key: String,
     value: String,
 }
 
 /// Get the string value of a given string key
-#[derive(Clap)]
+#[derive(Clap, Debug)]
 struct Get {
     key: String,
 }
 
 /// Remove a given key
-#[derive(Clap)]
+#[derive(Clap, Debug)]
 struct Rm {
     key: String,
 }
@@ -42,29 +57,26 @@ struct Rm {
 fn main() -> Result<()> {
     let opts: Opts = Opts::parse();
 
-    let mut kvs = KvStore::new()?;
+    let addr = SocketAddr::from_str(&opts.addr)?;
+    let mut stream = TcpStream::connect(addr)?;
 
-    // You can handle information about subcommands by requesting their matches by name
-    // (as below), requesting just the name used, or both at the same time
-    match opts.subcmd {
-        SubCommand::Set(set) => kvs.set(set.key, set.value)?,
-        SubCommand::Get(get) => {
-            let value = kvs.get(get.key)?;
-            if let Some(value) = value {
-                println!("{}", value);
-            } else {
-                println!("Key not found");
-            }
-        }
-        SubCommand::Rm(rm) => {
-            if let Err(err) = kvs.remove(rm.key) {
-                if let KvsError::KeyNotExist(_) = err {
-                    println!("Key not found");
-                }
-                return Err(err);
-            }
-        }
+    let protocol = match opts.subcmd {
+        SubCommand::Set(set) => Request::Set {
+            key: set.key,
+            value: set.value,
+        },
+        SubCommand::Get(get) => Request::Get { key: get.key },
+        SubCommand::Rm(rm) => Request::Remove { key: rm.key },
     };
+
+    serde_json::to_writer(&stream, &protocol)?;
+
+    let resp =
+        serde_json::from_reader(&stream).context("failed to receive response from server")?;
+    match resp {
+        Response::Success(value) => println!("{:?}", value),
+        Response::Failed(err) => println!("{:?}", err),
+    }
 
     Ok(())
 }
