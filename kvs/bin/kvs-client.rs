@@ -14,7 +14,7 @@ use std::str::FromStr;
 use anyhow::{Context, Result};
 use clap::{AppSettings, Clap};
 use kvs::{KvStore, KvsEngine, SledStore};
-use tracing::{event, instrument, Level};
+use tracing::{event, info, instrument, Level};
 
 #[derive(Clap, Debug)]
 #[clap(name = "kvs-server", version = crate_version!(), setting = AppSettings::ColoredHelp)]
@@ -55,12 +55,13 @@ struct Rm {
 }
 
 fn main() -> Result<()> {
+    tracing_subscriber::fmt::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .init();
+
     let opts: Opts = Opts::parse();
-
     let addr = SocketAddr::from_str(&opts.addr)?;
-    let mut stream = TcpStream::connect(addr)?;
-
-    let protocol = match opts.subcmd {
+    let req = match opts.subcmd {
         SubCommand::Set(set) => Request::Set {
             key: set.key,
             value: set.value,
@@ -68,8 +69,14 @@ fn main() -> Result<()> {
         SubCommand::Get(get) => Request::Get { key: get.key },
         SubCommand::Rm(rm) => Request::Remove { key: rm.key },
     };
+    info!(
+        addr = addr.to_string().as_str(),
+        request = format!("{:?}", req).as_str()
+    );
 
-    serde_json::to_writer(&stream, &protocol)?;
+    let mut stream = TcpStream::connect(addr)?;
+
+    serde_json::to_writer(&stream, &req)?;
 
     let resp =
         serde_json::from_reader(&stream).context("failed to receive response from server")?;

@@ -18,7 +18,7 @@ use std::str::FromStr;
 use anyhow::{Context, Result};
 use clap::{AppSettings, Clap};
 use kvs::{KvStore, KvsEngine, SledStore};
-use tracing::{event, info, instrument, trace, Level};
+use tracing::{error, event, info, info_span, instrument, span, trace, trace_span, Level};
 use tracing_subscriber::prelude::*;
 
 use crate::protocol::Response;
@@ -61,8 +61,19 @@ where
     }
 }
 
-fn handle_connection(engine: &mut dyn Engine, mut stream: TcpStream) -> Result<()> {
+fn handle_connection(
+    engine: &mut dyn Engine,
+    addr: SocketAddr,
+    mut stream: TcpStream,
+) -> Result<()> {
+    let span = info_span!("handle_connection");
+    let _enter = span.enter();
+
+    info!(req_addr = addr.to_string().as_str(),);
+
     let command = serde_json::from_reader(&stream)?;
+    info!(command = format!("{:?}", command).as_str());
+
     let resp = match command {
         Request::Get { key } => match engine.get(key) {
             Err(err) => Response::Failed(err.to_string()),
@@ -83,10 +94,9 @@ fn handle_connection(engine: &mut dyn Engine, mut stream: TcpStream) -> Result<(
     Ok(())
 }
 
-#[instrument]
+// #[instrument]
 fn main() -> Result<()> {
     tracing_subscriber::fmt::fmt()
-        .pretty() // enable everything
         .with_max_level(tracing::Level::TRACE)
         .init();
 
@@ -104,15 +114,14 @@ fn main() -> Result<()> {
     };
 
     let listener = TcpListener::bind(addr)?;
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => handle_connection(&mut *engine, stream)?,
-            Err(err) => {
-                println!("{:?}", err);
-                // unimplemented!("failed to accept connection")
+    loop {
+        match listener.accept() {
+            Ok((stream, req_addr)) => {
+                if let Err(err) = handle_connection(&mut *engine, req_addr, stream) {
+                    error!(error = format!("{:?}", err).as_str());
+                }
             }
+            Err(err) => error!(error = format!("{:?}", err).as_str()),
         }
     }
-
-    Ok(())
 }
