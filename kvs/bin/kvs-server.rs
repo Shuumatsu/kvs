@@ -18,7 +18,10 @@ use std::str::FromStr;
 use anyhow::{Context, Result};
 use clap::{AppSettings, Clap};
 use kvs::{KvStore, KvsEngine, SledStore};
-use tracing::{error, event, info, info_span, instrument, span, trace, trace_span, Level};
+use serde::Deserialize;
+use tracing::{
+    debug_span, error, event, info, info_span, instrument, span, trace, trace_span, Level,
+};
 use tracing_subscriber::prelude::*;
 
 use crate::protocol::Response;
@@ -61,17 +64,14 @@ where
     }
 }
 
-fn handle_connection(
-    engine: &mut dyn Engine,
-    addr: SocketAddr,
-    mut stream: TcpStream,
-) -> Result<()> {
+fn handle_connection(engine: &mut dyn Engine, mut stream: TcpStream) -> Result<()> {
     let span = info_span!("handle_connection");
     let _enter = span.enter();
 
-    info!(req_addr = addr.to_string().as_str(),);
+    info!(req_addr = stream.peer_addr()?.to_string().as_str());
 
-    let command = serde_json::from_reader(&stream)?;
+    let mut de = serde_json::Deserializer::from_reader(&mut stream);
+    let command = Request::deserialize(&mut de)?;
     info!(command = format!("{:?}", command).as_str());
 
     let resp = match command {
@@ -114,14 +114,16 @@ fn main() -> Result<()> {
     };
 
     let listener = TcpListener::bind(addr)?;
-    loop {
-        match listener.accept() {
-            Ok((stream, req_addr)) => {
-                if let Err(err) = handle_connection(&mut *engine, req_addr, stream) {
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                if let Err(err) = handle_connection(&mut *engine, stream) {
                     error!(error = format!("{:?}", err).as_str());
                 }
             }
             Err(err) => error!(error = format!("{:?}", err).as_str()),
         }
     }
+
+    Ok(())
 }

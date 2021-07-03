@@ -14,6 +14,7 @@ use std::str::FromStr;
 use anyhow::{Context, Result};
 use clap::{AppSettings, Clap};
 use kvs::{KvStore, KvsEngine, SledStore};
+use serde::Deserialize;
 use tracing::{event, info, instrument, Level};
 
 #[derive(Clap, Debug)]
@@ -78,8 +79,8 @@ fn main() -> Result<()> {
 
     serde_json::to_writer(&stream, &req)?;
 
-    let resp =
-        serde_json::from_reader(&stream).context("failed to receive response from server")?;
+    let mut de = serde_json::Deserializer::from_reader(&mut stream);
+    let resp = Response::deserialize(&mut de)?;
     match resp {
         Response::Success(value) => println!("{:?}", value),
         Response::Failed(err) => println!("{:?}", err),

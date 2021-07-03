@@ -1,4 +1,2 @@
-
-
 [workspace]
 members = ["kvs", "serde_resp"]

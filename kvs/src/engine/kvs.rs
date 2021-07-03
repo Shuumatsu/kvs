@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, debug_span, info, instrument};
 
 use crate::engine::KvsEngine;
 
@@ -50,10 +51,15 @@ impl KvStore {
     }
 
     pub fn open(directory: impl Into<PathBuf>) -> Result<Self> {
+        let span = debug_span!("initialize KvStore");
+        let _open = span.enter();
+
         let directory: PathBuf = directory.into();
         std::fs::create_dir_all(directory.clone())?;
 
-        let (file_path, mut file) = {
+        debug!(directory = format!("{}", directory.display()).as_str());
+
+        let (_file_path, mut file) = {
             let file_path = directory.clone().join("store.kvs");
 
             let mut option = File::with_options();
@@ -88,6 +94,8 @@ impl KvStore {
             curr_offset = next_offset;
         }
 
+        debug!(commands_cnt, records_cnt = index.len());
+
         Ok(KvStore {
             file,
             directory,
@@ -96,10 +104,17 @@ impl KvStore {
         })
     }
 
+    #[instrument]
     fn compact(&mut self) -> Result<()> {
+        debug!(
+            commands_cnt = self.commands_cnt,
+            records_cnt = self.index.len()
+        );
         if 2 * self.index.len() > self.commands_cnt {
+            debug!("no need to compact");
             return Ok(());
         }
+
         self.commands_cnt = self.index.len();
 
         let (file_path, mut file) = {
@@ -122,6 +137,10 @@ impl KvStore {
 
         fs::rename(file_path, self.directory.as_path().join("store.kvs"))?;
 
+        debug!(
+            commands_cnt = self.commands_cnt,
+            records_cnt = self.index.len()
+        );
         Ok(())
     }
 }
@@ -131,6 +150,7 @@ impl KvsEngine for KvStore {
 
     // When setting a key to a value, kvs writes the set command to disk in a sequential log,
     // then stores the log pointer (file offset) of that command in the in-memory index from key to pointer.
+    #[instrument]
     fn set(&mut self, key: String, value: String) -> Result<()> {
         let prev_offset = self.file.seek(io::SeekFrom::Current(0))?;
 
@@ -150,9 +170,11 @@ impl KvsEngine for KvStore {
         self.index.insert(key, record);
         self.commands_cnt += 1;
 
+        debug!(prev_offset, curr_offset);
         self.compact()
     }
 
+    #[instrument]
     fn get(&mut self, key: String) -> Result<Option<String>> {
         if !self.index.contains_key(&key) {
             return Ok(None);
